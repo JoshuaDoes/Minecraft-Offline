@@ -1,0 +1,2 @@
+# Minecraft Offline
+Currently nothing more than experimental testing, the aim is to eventually provide a stable environment to download and launch any version of Minecraft that is officially hosted by Mojang and also launch modded versions of Minecraft with ease.
