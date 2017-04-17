@@ -9,7 +9,6 @@
 					3.3.15.0 (Beta)
  Title:				Minecraft Offline
  Start date:		April 16th, 2017
-					- Rewriting from scratch
  Build Number:		0 (No builds released)
  Release Format:	None
  Author:			JoshuaDoes (Joshua Wickings)
@@ -25,11 +24,16 @@
 	- Login to your Mojang account
 	- Create the necessary directory structure for the game to operate in
 	- Download basic version info
+	- Download chosen version's index data of libraries
+	- Download chosen version's jar file
 
  To-Do:
 	- Implement logic to successfully launch Minecraft with the correct parameters
-	- Download all the other required files, such as assets and libraries and the
-	  version files themselves
+	- Download all the other required files, such as assets and libraries
+	- Properly support the entirety of Mojang's Yggdrasil authentication service, rather
+	  than just the necessary pieces of it
+	- Support work-in-progress HTTP-based mod repos
+	- Support automatically joining vanilla servers and servers that support the mod repos
 
  Credits:
 	- The AutoIt team for creating such an amazing dynamic and diverse scripting language
@@ -37,6 +41,7 @@
 	- Mojang for creating such a wonderful game (and also making their auth system easy)
 #ce ----------------------------------------------------------------------------~JD
 #include <String.au3>
+#include <Array.au3>
 #include "JSON.au3"
 
 Global Const $URL_REGISTER = "https://account.mojang.com/register"
@@ -66,14 +71,17 @@ Global $AUTH_UUID = ""
 Global $AUTH_ACCESS_TOKEN = ""
 Global $AUTH_CLIENT_TOKEN = ""
 Global $AUTH_IS_ONLINE = False
-Global $AUTH_USERNAME_EMAIL = "" ;Fill in your email, legacy account support not yet added
-Global $AUTH_PASSWORD = ;Fill in your password
+Global $AUTH_USERNAME_EMAIL = ""
+Global $AUTH_PASSWORD = ""
 Global $AUTH_PROFILE = ""
 
 Global Const $DIR_BASE = @AppDataDir & "\.minecraftoffline"
 Global Const $DIR_ASSETS = $DIR_BASE & "\assets"
 Global Const $DIR_INDEXES = $DIR_ASSETS & "\indexes"
 Global Const $DIR_OBJECTS = $DIR_ASSETS & "\objects"
+Global Const $DIR_SKINS = $DIR_ASSETS & "\skins"
+Global Const $DIR_LIBRARIES = $DIR_BASE & "\libraries"
+Global Const $DIR_VERSIONS = $DIR_BASE & "\versions"
 
 Global Const $FILE_AUTH_CREDENTIALS = $DIR_BASE & "\profiles.dat" ;Unused currently, will store auth tokens for previous sessions
 Global Const $FILE_VERSION_MANIFEST = $DIR_BASE & "\version_manifest.json"
@@ -124,6 +132,9 @@ DirCreate($DIR_BASE)
 DirCreate($DIR_ASSETS)
 DirCreate($DIR_INDEXES)
 DirCreate($DIR_OBJECTS)
+DirCreate($DIR_SKINS)
+DirCreate($DIR_LIBRARIES)
+DirCreate($DIR_VERSIONS)
 
 If FileExists($FILE_VERSION_MANIFEST) Then
 	ConsoleWrite("Version manifest exists, checking for corruption..." & @CRLF)
@@ -172,7 +183,7 @@ $GAME_VERSION_LATEST_RELEASE_JSON_URL = ""
 $GAME_VERSION_LATEST_RELEASE_JSON_FILE = $DIR_INDEXES & "\" & $GAME_VERSION_LATEST_RELEASE & ".json"
 ;$GAME_VERSION_LATEST_SNAPSHOT = Json_Get($FILE_VERSION_MANIFEST_DATA, '["latest"]["snapshot"]')
 For $i = 0 To UBound($GAME_VERSION_LIST) - 1
-	ConsoleWrite(Json_Get($GAME_VERSION_LIST[$i], '["id"]') & @CRLF)
+	;ConsoleWrite(Json_Get($GAME_VERSION_LIST[$i], '["id"]') & @CRLF)
 	If Json_Get($GAME_VERSION_LIST[$i], '["id"]') = $GAME_VERSION_LATEST_RELEASE Then
 		$GAME_VERSION_LATEST_RELEASE_JSON_URL = Json_Get($GAME_VERSION_LIST[$i], '["url"]')
 	EndIf
@@ -183,19 +194,74 @@ Next
 If Not $GAME_VERSION_LATEST_RELEASE_JSON_URL Then
 	Exit ConsoleWrite("Error finding the URL for the latest release version." & @CRLF)
 EndIf
-ConsoleWrite("Downloading info for version " & $GAME_VERSION_LATEST_RELEASE & "..." & @CRLF)
-InetGet($GAME_VERSION_LATEST_RELEASE_JSON_URL, $GAME_VERSION_LATEST_RELEASE_JSON_FILE)
-If @error Then
-	Exit ConsoleWrite("Error downloading info for version " & $GAME_VERSION_LATEST_RELEASE & "." & @CRLF)
+If FileExists($GAME_VERSION_LATEST_RELEASE_JSON_FILE) Then
+	ConsoleWrite("Info for version " & $GAME_VERSION_LATEST_RELEASE & " already exists, checking for corruption..." & @CRLF)
+	Json_StringDecode(FileRead($GAME_VERSION_LATEST_RELEASE_JSON_FILE))
+	If @error Then
+		Exit ConsoleWrite("Info for version " & $GAME_VERSION_LATEST_RELEASE & " corrupted!" & @CRLF)
+	Else
+		ConsoleWrite("Info for version " & $GAME_VERSION_LATEST_RELEASE & " passed corruption check." & @CRLF)
+	EndIf
 Else
-	ConsoleWrite("Successfully downloaded info for version " & $GAME_VERSION_LATEST_RELEASE & "." & @CRLF)
+	ConsoleWrite("Downloading info for version " & $GAME_VERSION_LATEST_RELEASE & "..." & @CRLF)
+	InetGet($GAME_VERSION_LATEST_RELEASE_JSON_URL, $GAME_VERSION_LATEST_RELEASE_JSON_FILE)
+	If @error Then
+		Exit ConsoleWrite("Error downloading info for version " & $GAME_VERSION_LATEST_RELEASE & "." & @CRLF)
+	Else
+		ConsoleWrite("Successfully downloaded info for version " & $GAME_VERSION_LATEST_RELEASE & "." & @CRLF)
+		ConsoleWrite("Checking info for version " & $GAME_VERSION_LATEST_RELEASE & " for corruption..." & @CRLF)
+		Json_StringDecode(FileRead($GAME_VERSION_LATEST_RELEASE_JSON_FILE))
+		If @error Then
+			Exit ConsoleWrite("Info for version " & $GAME_VERSION_LATEST_RELEASE & " corrupted!" & @CRLF)
+		Else
+			ConsoleWrite("Info for version " & $GAME_VERSION_LATEST_RELEASE & " passed corruption check." & @CRLF)
+		EndIf
+	EndIf
+EndIf
+
+If FileExists($DIR_VERSIONS & "\" & $GAME_VERSION_LATEST_RELEASE) Then
+	ConsoleWrite("Folder for version " & $GAME_VERSION_LATEST_RELEASE & " already exists!" & @CRLF)
+Else
+	ConsoleWrite("Creating folder for version " & $GAME_VERSION_LATEST_RELEASE & "..." & @CRLF)
+	DirCreate($DIR_VERSIONS & "\" & $GAME_VERSION_LATEST_RELEASE)
+	If FileExists($DIR_VERSIONS & "\" & $GAME_VERSION_LATEST_RELEASE) Then
+		ConsoleWrite("Successfully created folder for version " & $GAME_VERSION_LATEST_RELEASE & "!" & @CRLF)
+	Else
+		Exit ConsoleWrite("Error creating folder for version " & $GAME_VERSION_LATEST_RELEASE & "." & @CRLF)
+	EndIf
+EndIf
+If FileExists($DIR_VERSIONS & "\" & $GAME_VERSION_LATEST_RELEASE & "\" & $GAME_VERSION_LATEST_RELEASE & ".jar") Then
+	ConsoleWrite("Jar data for version " & $GAME_VERSION_LATEST_RELEASE & " already exists!" & @CRLF)
+Else
+	ConsoleWrite("Downloading jar data for version " & $GAME_VERSION_LATEST_RELEASE & "..." & @CRLF)
+	Local $hJarDownload = InetGet($URL_JAR_FALLBACK & "versions/" & $GAME_VERSION_LATEST_RELEASE & "/" & $GAME_VERSION_LATEST_RELEASE & ".jar", $DIR_VERSIONS & "\" & $GAME_VERSION_LATEST_RELEASE & "\" & $GAME_VERSION_LATEST_RELEASE & ".jar", 1, 1)
+	If InetGetInfo($hJarDownload, 1) Then
+		Do
+			Local $aJarDownloadInfo = InetGetInfo($hJarDownload, -1)
+			ConsoleWrite("[JarDownload:" & $GAME_VERSION_LATEST_RELEASE & "] " & ($aJarDownloadInfo[0] / $aJarDownloadInfo[1]) & "% downloaded..." & @CRLF)
+			Sleep(1000)
+		Until InetGetInfo($hJarDownload, 2)
+	Else
+		ConsoleWrite("[JarDownload:" & $GAME_VERSION_LATEST_RELEASE & "] Unknown size of download, waiting for download to complete..." & @CRLF)
+		ConsoleWrite("[JarDownload:" & $GAME_VERSION_LATEST_RELEASE & "] ")
+		Do
+			ConsoleWrite(".")
+			Sleep(1000)
+		Until InetGetInfo($hJarDownload, 2)
+		ConsoleWrite(@CRLF)
+	EndIf
+	If InetGetInfo($hJarDownload, 3) Then
+		ConsoleWrite("Successfully downloaded jar data for version " & $GAME_VERSION_LATEST_RELEASE & "!" & @CRLF)
+	ElseIf InetGetInfo($hJarDownload, 4) Then
+		Exit ConsoleWrite("Error downloading jar data for version " & $GAME_VERSION_LATEST_RELEASE & "." & @CRLF)
+	EndIf
 EndIf
 
 
 ;;;;
 
 Func Auth_Login_Token($sValidateURL, ByRef $AUTH_ACCESS_TOKEN, ByRef $AUTH_CLIENT_TOKEN)
-	Local $sSession_Data = _POST($sValidateURL, '{"accessToken":"' & $AUTH_ACCESS_TOKEN & '","clientToken":"' & $AUTH_CLIENT_TOKEN & '"}')
+	Local $sSession_Data = _POST($sValidateURL, '{"accessToken":"' & $AUTH_ACCESS_TOKEN & '","clientToken":"' & $AUTH_CLIENT_TOKEN & '"}', "Content-type:application/json")
 	If Not $sSession_Data Then
 		Return True
 	Else
@@ -203,7 +269,7 @@ Func Auth_Login_Token($sValidateURL, ByRef $AUTH_ACCESS_TOKEN, ByRef $AUTH_CLIEN
 	EndIf
 EndFunc
 Func Auth_Login_Password($sAuthenticateURL, $sUsername, $sPassword, $sClientIdentifier, ByRef $AUTH_ACCESS_TOKEN, ByRef $AUTH_CLIENT_TOKEN, ByRef $AUTH_UUID, ByRef $AUTH_PROFILE)
-	Local $sSession_Data = _POST($sAuthenticateURL, '{"agent":{"name":"Minecraft","version":1},"username":"' & $sUsername & '","password":"' & $sPassword & '","clientToken":"' & $sClientIdentifier & '"}')
+	Local $sSession_Data = _POST($sAuthenticateURL, '{"agent":{"name":"Minecraft","version":1},"username":"' & $sUsername & '","password":"' & $sPassword & '","clientToken":"' & $sClientIdentifier & '"}', "Content-type:application/json")
 	$AUTH_ACCESS_TOKEN = _StringBetween($sSession_Data, '"accessToken":"', '"')
 	If @error Then Return SetError(1, 0, @error)
 	$AUTH_ACCESS_TOKEN = $AUTH_ACCESS_TOKEN[0]
@@ -217,9 +283,29 @@ Func Auth_Login_Password($sAuthenticateURL, $sUsername, $sPassword, $sClientIden
 	If @error Then Return SetError(1, 0, @error)
 	$AUTH_PROFILE = $AUTH_PROFILE[0]
 EndFunc
-Func _POST($sURL, $sData = "")
+Func _POST($sURL, $sData = "", $sDelimitedRequestHeaders = "")
 	$oHTTP = ObjCreate("winhttp.winhttprequest.5.1")
 	$oHTTP.Open("POST", $sURL)
+	If $sDelimitedRequestHeaders Then
+		Local $aRequestHeaders = StringSplit($sDelimitedRequestHeaders, ";")
+		If @error Then
+			Local $aRequestHeader = StringSplit($sDelimitedRequestHeaders, ":")
+			If @error Then
+				ConsoleWrite("Error trying to parse request headers: " & $sDelimitedRequestHeaders & @CRLF)
+			Else
+				$oHTTP.SetRequestHeader($aRequestHeader[1], $aRequestHeader[2])
+			EndIf
+		Else
+			For $i = 1 To $aRequestHeaders[0]
+				Local $aRequestHeader = StringSplit($aRequestHeaders[$i], ":")
+				If @error Then
+					ConsoleWrite("Error trying to parse request headers: " & $sDelimitedRequestHeaders & @CRLF)
+				Else
+					$oHTTP.SetRequestHeader($aRequestHeader[1], $aRequestHeader[2])
+				EndIf
+			Next
+		EndIf
+	EndIf
 	$oHTTP.Send(StringToBinary($sData))
 	$HTMLSource = $oHTTP.ResponseText
 	Return $HTMLSource
