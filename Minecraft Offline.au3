@@ -24,12 +24,13 @@
 	- Login to your Mojang account
 	- Create the necessary directory structure for the game to operate in
 	- Download basic version info
-	- Download chosen version's index data of libraries
+	- Download chosen version's info file
 	- Download chosen version's jar file
+	- Download chosen version's required libraries (disregarding rules)
 
  To-Do:
 	- Implement logic to successfully launch Minecraft with the correct parameters
-	- Download all the other required files, such as assets and libraries
+	- Download all the other required files, such as assets
 	- Properly support the entirety of Mojang's Yggdrasil authentication service, rather
 	  than just the necessary pieces of it
 	- Support work-in-progress HTTP-based mod repos
@@ -43,6 +44,9 @@
 #include <String.au3>
 #include <Array.au3>
 #include "JSON.au3"
+
+Global $mSettings[]
+$mSettings["Overwrite Files"] = False
 
 Global Const $URL_REGISTER = "https://account.mojang.com/register"
 Global Const $URL_JAR_FALLBACK = "https://s3.amazonaws.com/Minecraft.Download/"
@@ -180,45 +184,22 @@ $FILE_VERSION_MANIFEST_DATA = Json_Decode($FILE_VERSION_MANIFEST_DATA)
 $GAME_VERSION_LIST = Json_Get($FILE_VERSION_MANIFEST_DATA, '["versions"]')
 $GAME_VERSION_LATEST_RELEASE = Json_Get($FILE_VERSION_MANIFEST_DATA, '["latest"]["release"]')
 $GAME_VERSION_LATEST_RELEASE_JSON_URL = ""
-$GAME_VERSION_LATEST_RELEASE_JSON_FILE = $DIR_INDEXES & "\" & $GAME_VERSION_LATEST_RELEASE & ".json"
-;$GAME_VERSION_LATEST_SNAPSHOT = Json_Get($FILE_VERSION_MANIFEST_DATA, '["latest"]["snapshot"]')
+$GAME_VERSION_LATEST_RELEASE_JSON_FILE = $DIR_VERSIONS & "\" & $GAME_VERSION_LATEST_RELEASE & "\" & $GAME_VERSION_LATEST_RELEASE & ".json"
+$GAME_VERSION_LATEST_SNAPSHOT = Json_Get($FILE_VERSION_MANIFEST_DATA, '["latest"]["snapshot"]')
+$GAME_VERSION_LATEST_SNAPSHOT_JSON_URL = ""
+$GAME_VERSION_LATEST_SNAPSHOT_JSON_FILE = $DIR_VERSIONS & "\" & $GAME_VERSION_LATEST_SNAPSHOT & "\" & $GAME_VERSION_LATEST_SNAPSHOT & ".json"
 For $i = 0 To UBound($GAME_VERSION_LIST) - 1
 	;ConsoleWrite(Json_Get($GAME_VERSION_LIST[$i], '["id"]') & @CRLF)
 	If Json_Get($GAME_VERSION_LIST[$i], '["id"]') = $GAME_VERSION_LATEST_RELEASE Then
 		$GAME_VERSION_LATEST_RELEASE_JSON_URL = Json_Get($GAME_VERSION_LIST[$i], '["url"]')
 	EndIf
-	;If Json_Get($GAME_VERSION_LIST[$i], '["id"]') = $GAME_VERSION_LATEST_SNAPSHOT Then
-	;	$GAME_VERSION_LATEST_SNAPSHOT_JSON_URL = Json_Get($GAME_VERSION_LIST[$i], '["url"]')
-	;EndIf
+	If Json_Get($GAME_VERSION_LIST[$i], '["id"]') = $GAME_VERSION_LATEST_SNAPSHOT Then
+		$GAME_VERSION_LATEST_SNAPSHOT_JSON_URL = Json_Get($GAME_VERSION_LIST[$i], '["url"]')
+	EndIf
 Next
 If Not $GAME_VERSION_LATEST_RELEASE_JSON_URL Then
 	Exit ConsoleWrite("Error finding the URL for the latest release version." & @CRLF)
 EndIf
-If FileExists($GAME_VERSION_LATEST_RELEASE_JSON_FILE) Then
-	ConsoleWrite("Info for version " & $GAME_VERSION_LATEST_RELEASE & " already exists, checking for corruption..." & @CRLF)
-	Json_StringDecode(FileRead($GAME_VERSION_LATEST_RELEASE_JSON_FILE))
-	If @error Then
-		Exit ConsoleWrite("Info for version " & $GAME_VERSION_LATEST_RELEASE & " corrupted!" & @CRLF)
-	Else
-		ConsoleWrite("Info for version " & $GAME_VERSION_LATEST_RELEASE & " passed corruption check." & @CRLF)
-	EndIf
-Else
-	ConsoleWrite("Downloading info for version " & $GAME_VERSION_LATEST_RELEASE & "..." & @CRLF)
-	InetGet($GAME_VERSION_LATEST_RELEASE_JSON_URL, $GAME_VERSION_LATEST_RELEASE_JSON_FILE)
-	If @error Then
-		Exit ConsoleWrite("Error downloading info for version " & $GAME_VERSION_LATEST_RELEASE & "." & @CRLF)
-	Else
-		ConsoleWrite("Successfully downloaded info for version " & $GAME_VERSION_LATEST_RELEASE & "." & @CRLF)
-		ConsoleWrite("Checking info for version " & $GAME_VERSION_LATEST_RELEASE & " for corruption..." & @CRLF)
-		Json_StringDecode(FileRead($GAME_VERSION_LATEST_RELEASE_JSON_FILE))
-		If @error Then
-			Exit ConsoleWrite("Info for version " & $GAME_VERSION_LATEST_RELEASE & " corrupted!" & @CRLF)
-		Else
-			ConsoleWrite("Info for version " & $GAME_VERSION_LATEST_RELEASE & " passed corruption check." & @CRLF)
-		EndIf
-	EndIf
-EndIf
-
 If FileExists($DIR_VERSIONS & "\" & $GAME_VERSION_LATEST_RELEASE) Then
 	ConsoleWrite("Folder for version " & $GAME_VERSION_LATEST_RELEASE & " already exists!" & @CRLF)
 Else
@@ -230,7 +211,7 @@ Else
 		Exit ConsoleWrite("Error creating folder for version " & $GAME_VERSION_LATEST_RELEASE & "." & @CRLF)
 	EndIf
 EndIf
-If FileExists($DIR_VERSIONS & "\" & $GAME_VERSION_LATEST_RELEASE & "\" & $GAME_VERSION_LATEST_RELEASE & ".jar") Then
+If FileExists($DIR_VERSIONS & "\" & $GAME_VERSION_LATEST_RELEASE & "\" & $GAME_VERSION_LATEST_RELEASE & ".jar") And $mSettings["Overwrite Files"] = False Then
 	ConsoleWrite("Jar data for version " & $GAME_VERSION_LATEST_RELEASE & " already exists!" & @CRLF)
 Else
 	ConsoleWrite("Downloading jar data for version " & $GAME_VERSION_LATEST_RELEASE & "..." & @CRLF)
@@ -256,6 +237,140 @@ Else
 		Exit ConsoleWrite("Error downloading jar data for version " & $GAME_VERSION_LATEST_RELEASE & "." & @CRLF)
 	EndIf
 EndIf
+If FileExists($GAME_VERSION_LATEST_RELEASE_JSON_FILE) Then
+	ConsoleWrite("Info for version " & $GAME_VERSION_LATEST_RELEASE & " already exists, checking for corruption..." & @CRLF)
+	Json_StringDecode(FileRead($GAME_VERSION_LATEST_RELEASE_JSON_FILE))
+	If @error Then
+		Exit ConsoleWrite("Info for version " & $GAME_VERSION_LATEST_RELEASE & " corrupted!" & @CRLF)
+	Else
+		ConsoleWrite("Info for version " & $GAME_VERSION_LATEST_RELEASE & " passed corruption check." & @CRLF)
+	EndIf
+Else
+	ConsoleWrite("Downloading info for version " & $GAME_VERSION_LATEST_RELEASE & "..." & @CRLF)
+	InetGet($GAME_VERSION_LATEST_RELEASE_JSON_URL, $GAME_VERSION_LATEST_RELEASE_JSON_FILE)
+	If @error Then
+		Exit ConsoleWrite("Error downloading info for version " & $GAME_VERSION_LATEST_RELEASE & "." & @CRLF)
+	Else
+		ConsoleWrite("Successfully downloaded info for version " & $GAME_VERSION_LATEST_RELEASE & "." & @CRLF)
+		ConsoleWrite("Checking info for version " & $GAME_VERSION_LATEST_RELEASE & " for corruption..." & @CRLF)
+		Json_StringDecode(FileRead($GAME_VERSION_LATEST_RELEASE_JSON_FILE))
+		If @error Then
+			Exit ConsoleWrite("Info for version " & $GAME_VERSION_LATEST_RELEASE & " corrupted!" & @CRLF)
+		Else
+			ConsoleWrite("Info for version " & $GAME_VERSION_LATEST_RELEASE & " passed corruption check." & @CRLF)
+		EndIf
+	EndIf
+EndIf
+$GAME_VERSION_LATEST_RELEASE_JSON_DATA = FileRead($GAME_VERSION_LATEST_RELEASE_JSON_FILE)
+$GAME_VERSION_LATEST_RELEASE_JSON_DATA = Json_Decode($GAME_VERSION_LATEST_RELEASE_JSON_DATA)
+$GAME_VERSION_LATEST_RELEASE_JSON_DATA_ID = Json_Get($GAME_VERSION_LATEST_RELEASE_JSON_DATA, "[id]")
+$GAME_VERSION_LATEST_RELEASE_JSON_DATA_ASSETINDEX = Json_Get($GAME_VERSION_LATEST_RELEASE_JSON_DATA, "[assetIndex]")
+$GAME_VERSION_LATEST_RELEASE_JSON_DATA_ASSETINDEX_ID = Json_Get($GAME_VERSION_LATEST_RELEASE_JSON_DATA_ASSETINDEX, "[id]")
+$GAME_VERSION_LATEST_RELEASE_JSON_DATA_ASSETINDEX_URL = Json_Get($GAME_VERSION_LATEST_RELEASE_JSON_DATA_ASSETINDEX, "[url]")
+$GAME_VERSION_LATEST_RELEASE_JSON_DATA_ASSETS = Json_Get($GAME_VERSION_LATEST_RELEASE_JSON_DATA, "[assets]")
+If $GAME_VERSION_LATEST_RELEASE <> $GAME_VERSION_LATEST_RELEASE_JSON_DATA_ID Then
+	Exit ConsoleWrite("Error parsing info for version " & $GAME_VERSION_LATEST_RELEASE & ". Selected version is " & $GAME_VERSION_LATEST_RELEASE & " but info for selected version defines version as " & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_ID & "." & @CRLF)
+EndIf
+If $GAME_VERSION_LATEST_RELEASE_JSON_DATA_ASSETINDEX_ID <> $GAME_VERSION_LATEST_RELEASE_JSON_DATA_ASSETS Then
+	Exit ConsoleWrite("Error parsing asset info for version " & $GAME_VERSION_LATEST_RELEASE & ". Asset index wants assets for " & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_ASSETINDEX_ID & " but defined assets is " & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_ASSETS & "." & @CRLF)
+EndIf
+$GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES = Json_Get($GAME_VERSION_LATEST_RELEASE_JSON_DATA, "[libraries]")
+;_ArrayDisplay($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES)
+For $i = 0 To UBound($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES) - 1
+	Local $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_NAME = Json_Get($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES[$i], "[name]")
+	Local $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS = Json_Get($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES[$i], "[downloads]")
+	Local $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_CLASSIFIERS = Json_Get($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS, "[classifiers]")
+	ConsoleWrite("Found library #" & ($i + 1) & ": " & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_NAME & @CRLF)
+	If Json_IsObject($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_CLASSIFIERS) Then
+		ConsoleWrite("Using native for library #" & ($i + 1) & "..." & @CRLF)
+		Local $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_CLASSIFIERS_NATIVES_WINDOWS = Json_Get($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_CLASSIFIERS, "[natives-windows]")
+		Local $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_CLASSIFIERS_NATIVES_WINDOWS_URL = Json_Get($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_CLASSIFIERS_NATIVES_WINDOWS, "[url]")
+		Local $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_CLASSIFIERS_NATIVES_WINDOWS_PATH = Json_Get($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_CLASSIFIERS_NATIVES_WINDOWS, "[path]")
+		Local $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_CLASSIFIERS_NATIVES_WINDOWS_PATH_LOCAL = $DIR_LIBRARIES & "\" & StringReplace($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_CLASSIFIERS_NATIVES_WINDOWS_PATH, "/", "\")
+		ConsoleWrite("Library #" & ($i + 1) & " URL: " & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_CLASSIFIERS_NATIVES_WINDOWS_URL & @CRLF)
+		ConsoleWrite("Library #" & ($i + 1) & " path: " & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_CLASSIFIERS_NATIVES_WINDOWS_PATH & @CRLF)
+		Local $TEMP = StringSplit($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_CLASSIFIERS_NATIVES_WINDOWS_PATH, "/")
+		Local $TEMP2 = $DIR_LIBRARIES
+		For $j = 1 To $TEMP[0]
+			If $j < $TEMP[0] Then
+				$TEMP2 &= "\" & $TEMP[$j]
+			EndIf
+		Next
+		DirCreate($TEMP2)
+		$TEMP = 0
+		$TEMP2 = 0
+		If FileExists($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_CLASSIFIERS_NATIVES_WINDOWS_PATH_LOCAL) And $mSettings["Overwrite Files"] = False Then
+			ConsoleWrite("Library " & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_NAME & " already exists!" & @CRLF)
+		Else
+			ConsoleWrite("Downloading library " & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_NAME & "..." & @CRLF)
+			Local $hLibraryDownload = InetGet($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_CLASSIFIERS_NATIVES_WINDOWS_URL, $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_CLASSIFIERS_NATIVES_WINDOWS_PATH_LOCAL, 1, 1)
+			If InetGetInfo($hLibraryDownload, 1) Then
+				Do
+					Local $aLibraryDownloadInfo = InetGetInfo($hLibraryDownload, -1)
+					ConsoleWrite("[LibraryDownload:" & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_NAME & "] " & ($aLibraryDownloadInfo[0] / $aLibraryDownloadInfo[1]) & "% downloaded..." & @CRLF)
+					Sleep(1000)
+				Until InetGetInfo($hLibraryDownload, 2)
+			Else
+				ConsoleWrite("[LibraryDownload:" & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_NAME & "] Unknown size of download, waiting for download to complete..." & @CRLF)
+				ConsoleWrite("[LibraryDownload:" & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_NAME & "] ")
+				Do
+					ConsoleWrite(".")
+					Sleep(1000)
+				Until InetGetInfo($hLibraryDownload, 2)
+				ConsoleWrite(@CRLF)
+			EndIf
+			If InetGetInfo($hLibraryDownload, 3) Then
+				ConsoleWrite("Successfully downloaded library " & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_NAME & "!" & @CRLF)
+			ElseIf InetGetInfo($hLibraryDownload, 4) Then
+				Exit ConsoleWrite("Error downloading library " & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_NAME & "." & @CRLF)
+			EndIf
+		EndIf
+	Else
+		ConsoleWrite("Using global for library #" & ($i + 1) & "..." & @CRLF)
+		Local $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_ARTIFACT = Json_Get($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS, "[artifact]")
+		Local $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_ARTIFACT_URL = Json_Get($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_ARTIFACT, "[url]")
+		Local $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_ARTIFACT_PATH = Json_Get($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_ARTIFACT, "[path]")
+		Local $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_ARTIFACT_PATH_LOCAL = $DIR_LIBRARIES & "\" & StringReplace($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_ARTIFACT_PATH, "/", "\")
+		ConsoleWrite("Library #" & ($i + 1) & " URL: " & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_ARTIFACT_URL & @CRLF)
+		ConsoleWrite("Library #" & ($i + 1) & " path: " & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_ARTIFACT_PATH & @CRLF)
+		Local $TEMP = StringSplit($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_ARTIFACT_PATH, "/")
+		Local $TEMP2 = $DIR_LIBRARIES
+		For $j = 1 To $TEMP[0]
+			If $j < $TEMP[0] Then
+				$TEMP2 &= "\" & $TEMP[$j]
+			EndIf
+		Next
+		DirCreate($TEMP2)
+		$TEMP = 0
+		$TEMP2 = 0
+		If FileExists($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_ARTIFACT_PATH_LOCAL) And $mSettings["Overwrite Files"] = False Then
+			ConsoleWrite("Library " & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_NAME & " already exists!" & @CRLF)
+		Else
+			ConsoleWrite("Downloading library " & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_NAME & "..." & @CRLF)
+			Local $hLibraryDownload = InetGet($GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_ARTIFACT_URL, $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_DOWNLOADS_ARTIFACT_PATH_LOCAL, 1, 1)
+			If InetGetInfo($hLibraryDownload, 1) Then
+				Do
+					Local $aLibraryDownloadInfo = InetGetInfo($hLibraryDownload, -1)
+					ConsoleWrite("[LibraryDownload:" & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_NAME & "] " & ($aLibraryDownloadInfo[0] / $aLibraryDownloadInfo[1]) & "% downloaded..." & @CRLF)
+					Sleep(1000)
+				Until InetGetInfo($hLibraryDownload, 2)
+			Else
+				ConsoleWrite("[LibraryDownload:" & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_NAME & "] Unknown size of download, waiting for download to complete..." & @CRLF)
+				ConsoleWrite("[LibraryDownload:" & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_NAME & "] ")
+				Do
+					ConsoleWrite(".")
+					Sleep(1000)
+				Until InetGetInfo($hLibraryDownload, 2)
+				ConsoleWrite(@CRLF)
+			EndIf
+			If InetGetInfo($hLibraryDownload, 3) Then
+				ConsoleWrite("Successfully downloaded library " & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_NAME & "!" & @CRLF)
+			ElseIf InetGetInfo($hLibraryDownload, 4) Then
+				Exit ConsoleWrite("Error downloading library " & $GAME_VERSION_LATEST_RELEASE_JSON_DATA_LIBRARIES_NAME & "." & @CRLF)
+			EndIf
+		EndIf
+	EndIf
+Next
 
 
 ;;;;
